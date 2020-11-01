@@ -91,11 +91,89 @@ I've seen advice to instead have your view [send/2] itself a message and do slow
 
 Press "Count Slow". You can catch the `nprogress` strip, again, but that aside nothing happens for five seconds. If you press either button during that five seconds, though, you'll see that the view is just as blocked. LiveView can't call `handle_event/3` until `handle_info/2` returns.
 
+## Spawn processes with `Task.async/1`
+
+To avoid being blocked, we need to spawn another process to do the heavy work. [Task.async/1] seems an obvious way to launch it, but if we call [Task.await/2] from our `LiveView` or `GenServer` callbacks we'll block our process for as long as the `timeout`. We can copy its techniques, though, and the documentation for [Task.async/3] gives us a clue. The last paragraph describes the key difference between a `Task` and any other process you might have spawned to call a function:
+
+> The reply sent by the task will be in the format `{ref, result}`, where `ref` is the monitor reference held by the task struct and `result` is the return value of the task function.
+
+When the function returns, the task's process sends its owner the result. For more clues, we can read the [Getting Started: Processes][processes] guide and the code of `await/2` in Elixir 1.11.1:
+
+```elixir
+  @spec await(t, timeout) :: term
+  def await(%Task{ref: ref, owner: owner} = task, timeout \\ 5000) when is_timeout(timeout) do
+    if owner != self() do
+      raise ArgumentError, invalid_owner_error(task)
+    end
+
+    receive do
+      {^ref, reply} ->
+        Process.demonitor(ref, [:flush])
+        reply
+
+      {:DOWN, ^ref, _, proc, reason} ->
+        exit({reason(reason, proc), {__MODULE__, :await, [task, timeout]}})
+    after
+      timeout ->
+        Process.demonitor(ref, [:flush])
+        exit({:timeout, {__MODULE__, :await, [task, timeout]}})
+    end
+  end
+```
+
+The owning process passes the ownership check, then calls [receive/1]. The first match `{^ref, reply}` pins the task's monitor reference and binds its reply. If it receives a matching message before it times out, it calls [Process.demonitor/2] to drop the monitor and clean up any of its `:DOWN` messages.
+
+Later on, we'll care about the `:DOWN` message and timeout, but for now let's see if we can solve our blocking problem. LiveView calls `receive/2` for us, but we can get the message as the first argument of our `handle_info/2`. All together, our procedure is to:
+
+* Call `Task.async/1` or `Task.async/3` from our buttons' `handle_event/3` clauses
+* Get its reply in our `handle_info/2`
+* Call `Process.demonitor(ref, [:flush])` so we don't have to add a clause for the `:DOWN` message
+* Update the socket's assigns
+
+```elixir
+  @impl true
+  def handle_event("slow", %{}, socket) do
+    Task.async(__MODULE__, :delay, [:slow, 5000])
+    {:noreply, socket}
+  end
+
+  def handle_event("fast", %{}, socket) do
+    Task.async(fn -> delay(:false, 10) end)
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({ref, key}, socket) do
+    Process.demonitor(ref, [:flush])
+    {:noreply, assign(socket, :counts, update_in(socket.assigns.counts, [key], &(&1 + 1)))}
+  end
+
+  @doc false
+  def delay(term, ms) do
+    :timer.sleep(ms)
+    term
+  end
+```
+
+You can mash the "Count Slow" button five times, then the "Count Fast" button twenty times, and see the fast counter increment every time right after you hit the button. Eventually, the slow counter catches up as its tasks finish. The view is never blocked. Success!
+
+For anything more complicated than a reliable timer with a predictable duration, of course, it can't be this easy. For now, though, we can mash the buttons a few more times to celebrate.
+
 [:timer.sleep/1]: http://erlang.org/doc/man/timer.html#sleep-1
 [JavaScript client specifics]: https://hexdocs.pm/phoenix_live_view/form-bindings.html#javascript-client-specifics
 [LiveView.handle_event/3]: https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#c:handle_info/3
+[LiveView.handle_event/3]: https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#c:handle_info/3
 [LiveView.handle_info/2]: https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#c:handle_info/2
+[LiveView.handle_info/2]: https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#c:handle_info/2
+[Process.demonitor/2]: https://hexdocs.pm/elixir/Process.html#demonitor/2
+[Process.monitor/1]: https://hexdocs.pm/elixir/Process.html#monitor/1
+[Task.async/1]: https://hexdocs.pm/elixir/Task.html#async/1
+[Task.async/3]: https://hexdocs.pm/elixir/Task.html#async/3
+[Task.await/2]: https://hexdocs.pm/elixir/Task.html#await/2
 [nprogress]: https://www.npmjs.com/package/nprogress
+[processes]: https://elixir-lang.org/getting-started/processes.html
+[receive/1]: https://hexdocs.pm/elixir/Kernel.html#receive/1
+[send/2]: https://hexdocs.pm/elixir/Kernel.html#send/2
 
 ## Usual instructions
 

@@ -8,18 +8,24 @@ defmodule LiveBgDemoWeb.PageLive do
 
   @impl true
   def handle_event("slow", %{}, socket) do
-    send(self(), :slow)
+    Task.async(fn -> delay(:slow, 5000) end)
     {:noreply, socket}
   end
 
   def handle_event("fast", %{}, socket) do
-    :timer.sleep(10)
-    {:noreply, assign(socket, :counts, update_in(socket.assigns.counts, [:fast], &(&1 + 1)))}
+    Task.async(__MODULE__, :delay, [:fast, 10])
+    {:noreply, socket}
   end
 
   @impl true
-  def handle_info(:slow, socket) do
-    :timer.sleep(5000)
-    {:noreply, assign(socket, :counts, update_in(socket.assigns.counts, [:slow], &(&1 + 1)))}
+  def handle_info({ref, key}, socket) do
+    Process.demonitor(ref, [:flush])
+    {:noreply, assign(socket, :counts, update_in(socket.assigns.counts, [key], &(&1 + 1)))}
+  end
+
+  @doc false
+  def delay(term, ms) do
+    :timer.sleep(ms)
+    term
   end
 end
