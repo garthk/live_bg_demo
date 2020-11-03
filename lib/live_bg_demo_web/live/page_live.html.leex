@@ -2,14 +2,14 @@
   <h1>Welcome to Phoenix!</h1>
   <p>Peace of mind from prototype to production</p>
 
-  <form phx-change="suggest" phx-submit="search">
-    <input type="text" name="q" value="<%= @query %>" placeholder="Live dependency search" list="results" autocomplete="off"/>
-    <datalist id="results">
-      <%= for {app, _vsn} <- @results do %>
-        <option value="<%= app %>"><%= app %></option>
-      <% end %>
-    </datalist>
-    <button type="submit" phx-disable-with="Searching...">Go to Hexdocs</button>
+  <form phx-submit="fast">
+    <input type="number" id="count" size="3" value="<%= @counts.fast %>" disabled>
+    <button type="submit" phx-disable-with="Working...">Count Fast</button>
+  </form>
+
+  <form phx-submit="slow">
+    <input type="number" id="count" size="3" value="<%= @counts.slow %>" disabled>
+    <button type="submit" phx-disable-with="Working...">Count Slow</button>
   </form>
 </section>
 
