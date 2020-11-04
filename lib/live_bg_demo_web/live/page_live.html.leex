@@ -11,6 +11,10 @@
     <input type="number" id="count" size="3" value="<%= @counts.slow %>" disabled>
     <button type="submit" phx-disable-with="Working...">Count Slow</button>
   </form>
+
+  <form phx-submit="fail">
+    <button type="submit" phx-disable-with="Working...">Fail</button>
+  </form>
 </section>
 
 <section class="row">

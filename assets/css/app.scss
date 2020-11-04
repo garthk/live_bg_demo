@@ -19,6 +19,9 @@
 .phx-disconnected *{
   pointer-events: none;
 }
+.phx-error *{
+  background-color: pink;
+}
 
 .phx-modal {
   opacity: 1!important;

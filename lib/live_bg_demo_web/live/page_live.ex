@@ -17,6 +17,11 @@ defmodule LiveBgDemoWeb.PageLive do
     {:noreply, socket}
   end
 
+  def handle_event("fail", %{}, socket) do
+    Task.async(fn -> delay_fail("fail", 10) end)
+    {:noreply, socket}
+  end
+
   @impl true
   def handle_info({ref, key}, socket) do
     Process.demonitor(ref, [:flush])
@@ -27,5 +32,11 @@ defmodule LiveBgDemoWeb.PageLive do
   def delay(term, ms) do
     :timer.sleep(ms)
     term
+  end
+
+  @doc false
+  def delay_fail(msg, ms) do
+    :timer.sleep(ms)
+    raise msg
   end
 end

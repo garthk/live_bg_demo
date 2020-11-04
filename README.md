@@ -159,12 +159,80 @@ You can mash the "Count Slow" button five times, then the "Count Fast" button tw
 
 For anything more complicated than a reliable timer with a predictable duration, of course, it can't be this easy. For now, though, we can mash the buttons a few more times to celebrate.
 
+## Fail!
+
+Failure is possible in most of the functions we're interested in calling while the user waits. We'd better find out what happens. First, let's make it obvious using the `phx-error` class documented in [Loading state and errors]. Add this to your `assets/css/app.scss`:
+
+```css
+.phx-error *{
+  background-color: pink;
+}
+```
+
+Add a button to trigger failure to your view template:
+
+```html
+  <form phx-submit="fail">
+    <button type="submit" phx-disable-with="Working...">Fail</button>
+  </form>
+```
+
+That'll fail without any extra code, now I think of it. Push it!
+
+```plain
+** (FunctionClauseError) no function clause matching in LiveBgDemoWeb.PageLive.handle_event/3
+Last message: %Phoenix.Socket.Message{event: "event", payload: %{"event" => "fail", ...}, ...}
+```
+
+When our view crashes, its parent container gets a new `phx-error` class, turning everything inside it pink. LiveView dispatches the JavaScript event `phx:page-loading-start` on the window, kicking off [nprogress] in our default `assets/js/app.js`: you can see the blue stripe creep forward. Eventually LiveView calls our `mount/3` and (hidden) `render/1` in a new process. Some tidying up later, and we're back to normal.
+
+Does it act the same when we add a matching clause but raise an exception in it?
+
+```elixir
+  def handle_event("fail", _, _) do
+    raise "fail"
+  end
+```
+
+Yes:
+
+```plain
+** (RuntimeError) fail
+Last message: %Phoenix.Socket.Message{event: "event", payload: %{"event" => "fail", ...}, ...}
+```
+
+How about if we do so in a task? Replace that clause with:
+
+```elixir
+  def handle_event("fail", %{}, socket) do
+    Task.async(__MODULE__, :delay_fail, ["fail", 10])
+    {:noreply, socket}
+  end
+
+  @doc false
+  def delay_fail(msg, ms) do
+    :timer.sleep(ms)
+    raise msg
+  end
+```
+
+Push the button again...
+
+```plain
+[error] Task #PID<0.1313.0> started from #PID<0.1311.0> terminating
+** (RuntimeError) fail
+Function: &LiveBgDemoWeb.PageLive.delay_fail/2
+```
+
+Because we used `Task.async`, the task's process is linked to its owner: our view. When the task crashes, its owner crashes. The view starts again from scratch, and we're back to our starting state.
+
 [:timer.sleep/1]: http://erlang.org/doc/man/timer.html#sleep-1
-[JavaScript client specifics]: https://hexdocs.pm/phoenix_live_view/form-bindings.html#javascript-client-specifics
+[JavaScript client specifics]: https://hexdocs.pm/phoenix_live_view/0.14.8/form-bindings.html#javascript-client-specifics
 [LiveView.handle_event/3]: https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#c:handle_info/3
 [LiveView.handle_event/3]: https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#c:handle_info/3
 [LiveView.handle_info/2]: https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#c:handle_info/2
 [LiveView.handle_info/2]: https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html#c:handle_info/2
+[Loading state and errors]: https://hexdocs.pm/phoenix_live_view/0.14.8/js-interop.html#loading-state-and-errors
 [Process.demonitor/2]: https://hexdocs.pm/elixir/Process.html#demonitor/2
 [Process.monitor/1]: https://hexdocs.pm/elixir/Process.html#monitor/1
 [Task.async/1]: https://hexdocs.pm/elixir/Task.html#async/1
